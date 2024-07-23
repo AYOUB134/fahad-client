@@ -3,6 +3,9 @@ import React, { useState, useEffect } from 'react';
 const ViewTotalIncome = ({ onClose }) => {
   const [customers, setCustomers] = useState([]);
   const [totalIncome, setTotalIncome] = useState(0);
+  const [totalBusinessIncome, setTotalBusinessIncome] = useState(0);
+  const [totalBusinessPaidIncome, setTotalBusinessPaidIncome] = useState(0);
+  const [totalBusinessUnpaidIncome, setTotalBusinessUnpaidIncome] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [password, setPassword] = useState('');
@@ -23,7 +26,7 @@ const ViewTotalIncome = ({ onClose }) => {
           }
           const data = await response.json();
           setCustomers(data);
-          calculateTotalIncome(data); // Calculate total income after fetching data
+          calculateTotals(data); // Calculate totals after fetching data
         } catch (err) {
           setError(err.message);
         } finally {
@@ -35,45 +38,73 @@ const ViewTotalIncome = ({ onClose }) => {
     }
   }, [passwordEntered]);
 
-  const calculateTotalIncome = (data) => {
-    let total = 0;
+  const calculateTotals = (data) => {
+    let totalIncome = 0;
+    let totalBusinessIncome = 0;
+    let totalBusinessPaidIncome = 0;
+    let totalBusinessUnpaidIncome = 0;
+  
+    data.forEach(customer => {
+      // Add totalPayment for Total Business Income
+      totalBusinessIncome += customer.totalPayment;
+  
+      // Calculate Total Business Paid Income
+      // Add advancePayment
+      totalBusinessPaidIncome += customer.advancePayment;
 
-    const filteredData = data.filter(customer => {
-      return customer.installments.some(installment => {
-        const date = new Date(installment.date);
-        return (
-          installment.status &&
-          (!startDate || date >= new Date(startDate)) &&
-          (!endDate || date <= new Date(endDate))
-        );
-      });
-    });
-
-    filteredData.forEach(customer => {
-      // Sum installments where status is true
+      // Add installments where status is true
       customer.installments.forEach(installment => {
         if (installment.status) {
-          const date = new Date(installment.date);
-          if ((!startDate || date >= new Date(startDate)) &&
-              (!endDate || date <= new Date(endDate))) {
-            total += installment.amount;
-          }
+          totalBusinessPaidIncome += installment.amount;
         }
       });
 
-      // Sum special dues where status is true (if it existed in the data structure)
+      // Add specialDue where status is true
       customer.specialDue.forEach(due => {
         if (due.status) {
-          const date = new Date(due.date);
-          if ((!startDate || date >= new Date(startDate)) &&
-              (!endDate || date <= new Date(endDate))) {
-            total += due.amount;
-          }
+          totalBusinessPaidIncome += due.amount;
+        }
+      });
+
+      // Calculate Total Business Unpaid Income
+      // Add installments where status is false
+      customer.installments.forEach(installment => {
+        if (!installment.status) {
+          totalBusinessUnpaidIncome += installment.amount;
+        }
+      });
+
+      // Add specialDue where status is false
+      customer.specialDue.forEach(due => {
+        if (!due.status) {
+          totalBusinessUnpaidIncome += due.amount;
+        }
+      });
+  
+      // Calculate total income within the date range
+      customer.installments.forEach(installment => {
+        const date = new Date(installment.date);
+        if (installment.status &&
+            (!startDate || date >= new Date(startDate)) &&
+            (!endDate || date <= new Date(endDate))) {
+          totalIncome += installment.amount;
+        }
+      });
+  
+      customer.specialDue.forEach(due => {
+        const date = new Date(due.dueDate);
+        if (due.status &&
+            (!startDate || date >= new Date(startDate)) &&
+            (!endDate || date <= new Date(endDate))) {
+          totalIncome += due.amount;
         }
       });
     });
-
-    setTotalIncome(total);
+  
+    setTotalIncome(totalIncome);
+    setTotalBusinessIncome(totalBusinessIncome);
+    setTotalBusinessPaidIncome(totalBusinessPaidIncome);
+    setTotalBusinessUnpaidIncome(totalBusinessUnpaidIncome);
   };
 
   const handlePasswordSubmit = () => {
@@ -115,6 +146,16 @@ const ViewTotalIncome = ({ onClose }) => {
         ) : (
           <div>
             <div className="mb-6">
+              <div className="flex flex-col mb-6">
+                <h2 className="text-3xl font-semibold mb-4">Income Summary</h2>
+                <div className="text-lg mb-4">
+                  <p><strong>Total Business Income:</strong> Rs.{totalBusinessIncome.toFixed(2)}</p>
+                  <p><strong>Total Business Paid Income:</strong> Rs.{totalBusinessPaidIncome.toFixed(2)}</p>
+                  <p><strong>Total Business Unpaid Income:</strong> Rs.{totalBusinessUnpaidIncome.toFixed(2)}</p>
+                  <p><strong>Total Income (Filtered by Date):</strong> Rs.{totalIncome.toFixed(2)}</p>
+                </div>
+              </div>
+
               <h2 className="text-3xl font-semibold mb-4">Filter by Date Range</h2>
               <div className="flex flex-col sm:flex-row gap-4 mb-6">
                 <input
@@ -131,7 +172,7 @@ const ViewTotalIncome = ({ onClose }) => {
                 />
               </div>
               <button
-                onClick={() => calculateTotalIncome(customers)}
+                onClick={() => calculateTotals(customers)}
                 className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition"
               >
                 Apply Filter
@@ -155,7 +196,7 @@ const ViewTotalIncome = ({ onClose }) => {
             ) : (
               <div className="text-center text-lg">
                 <div className="font-semibold">
-                  Total Income: Rs.{totalIncome.toFixed(2)}
+                  Total Income (Filtered by Date): Rs.{totalIncome.toFixed(2)}
                 </div>
               </div>
             )}

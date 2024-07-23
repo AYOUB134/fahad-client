@@ -19,10 +19,8 @@ const calculateAmounts = (customer) => {
     const totalPaidInstallments = customer.installments?.reduce((total, installment) => installment.status ? total + installment.amount : total, 0) || 0;
     const totalPaidAmount = totalPaidSpecialDue + totalPaidInstallments + advancePayment;
 
-    // Total Dues Amount calculation
-    const totalDuesSpecialDue = customer.specialDue?.reduce((total, entry) => !entry.status ? total + entry.amount : total, 0) || 0;
-    const totalDuesInstallments = customer.installments?.reduce((total, installment) => !installment.status ? total + installment.amount : total, 0) || 0;
-    const totalDuesAmount = totalDuesSpecialDue + totalDuesInstallments;
+    // Total Dues Amount calculation (Total Amount - Total Paid Amount)
+    const totalDuesAmount = totalAmount - totalPaidAmount;
 
     // Total Payable Amount calculation (only past and current)
     const today = new Date();
@@ -47,6 +45,7 @@ const calculateAmounts = (customer) => {
     return { totalAmount, totalPaidAmount, totalDuesAmount, totalPayableAmount };
 };
 
+
 // Check if a customer has any due installments based on the date and status
 const hasDueInstallments = (installments, start, end) => {
     return installments?.some(installment => {
@@ -56,7 +55,7 @@ const hasDueInstallments = (installments, start, end) => {
 };
 
 // Get the start and end of the day and filter customers based on due date and status
-const getDateRange = (range) => {
+const getDateRange = (range, customStart, customEnd) => {
     const now = new Date();
     const start = new Date();
     const end = new Date();
@@ -70,6 +69,11 @@ const getDateRange = (range) => {
             start.setHours(0, 0, 0, 0);
             end.setHours(23, 59, 59, 999);
             break;
+        case 'custom':
+            if (customStart && customEnd) {
+                return [new Date(customStart), new Date(customEnd)];
+            }
+            break;
         default:
             return [null, null];
     }
@@ -77,7 +81,7 @@ const getDateRange = (range) => {
 };
 
 // Filter customers based on due date and status
-const filterCustomers = (customers, filter, search) => {
+const filterCustomers = (customers, filter, search, customStart, customEnd) => {
     const now = new Date();
     let filtered = customers;
 
@@ -97,6 +101,17 @@ const filterCustomers = (customers, filter, search) => {
             hasDueInstallments(customer.installments, new Date(0), now) ||
             hasDueInstallments(customer.specialDue, new Date(0), now)
         );
+        return filtered;
+    }
+
+    if (filter === 'custom') {
+        const [start, end] = getDateRange('custom', customStart, customEnd);
+        if (start && end) {
+            filtered = filtered.filter(customer => 
+                hasDueInstallments(customer.installments, start, end) ||
+                hasDueInstallments(customer.specialDue, start, end)
+            );
+        }
         return filtered;
     }
 
@@ -134,6 +149,8 @@ const AllCustomers = () => {
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState('all');
     const [installmentAdded, setInstallmentAdded] = useState(false);
+    const [customStartDate, setCustomStartDate] = useState('');
+    const [customEndDate, setCustomEndDate] = useState('');
 
     const handleViewDetails = (customer) => {
         setSelectedCustomer(customer);
@@ -150,6 +167,18 @@ const AllCustomers = () => {
 
     const handleFilterChange = (e) => {
         setFilter(e.target.value);
+        if (e.target.value !== 'custom') {
+            setCustomStartDate('');
+            setCustomEndDate('');
+        }
+    };
+
+    const handleCustomStartDateChange = (e) => {
+        setCustomStartDate(e.target.value);
+    };
+
+    const handleCustomEndDateChange = (e) => {
+        setCustomEndDate(e.target.value);
     };
 
     const handleAddInstallment = (customer) => {
@@ -168,9 +197,10 @@ const AllCustomers = () => {
 
     const filteredCustomers = filter === 'clear'
         ? filterClearCustomers(customers)
-        : filterCustomers(customers, filter, search);
+        : filterCustomers(customers, filter, search, customStartDate, customEndDate);
 
-    const totalCustomers = customers.length;
+    const totalCustomers = filteredCustomers.length;
+    const totalPayableAmount = filteredCustomers.reduce((total, customer) => total + calculateAmounts(customer).totalPayableAmount, 0);
 
     const printDetails = () => {
         window.print();
@@ -201,7 +231,26 @@ const AllCustomers = () => {
                     <option value="current-day">Current Day</option>
                     <option value="clear">Clear Customers</option>
                     <option value="all-dues">View All Dues</option>
+                    <option value="custom">Custom Date Range</option>
                 </select>
+                {filter === 'custom' && (
+                    <div className="flex flex-col md:flex-row gap-4">
+                        <input
+                            type="date"
+                            value={customStartDate}
+                            onChange={handleCustomStartDateChange}
+                            className="p-2 border border-gray-300 rounded-lg"
+                            aria-label="Custom start date"
+                        />
+                        <input
+                            type="date"
+                            value={customEndDate}
+                            onChange={handleCustomEndDateChange}
+                            className="p-2 border border-gray-300 rounded-lg"
+                            aria-label="Custom end date"
+                        />
+                    </div>
+                )}
             </div>
 
             {/* Customer Table */}
@@ -209,6 +258,7 @@ const AllCustomers = () => {
                 <table className="min-w-full bg-white border border-gray-200 rounded-lg shadow-md table-fixed">
                     <thead>
                         <tr className="bg-gray-100 border-b border-gray-300">
+                            <th className="py-3 px-4 text-left border-r text-sm">No.</th>
                             <th className="py-3 px-4 text-left border-r text-sm">Name</th>
                             <th className="py-3 px-4 text-left border-r text-sm">Contact</th>
                             <th className="py-3 px-4 text-left border-r text-sm">Nation</th>
@@ -219,8 +269,9 @@ const AllCustomers = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredCustomers.map((customer) => (
+                        {filteredCustomers.map((customer, index) => (
                             <tr key={customer.id} className="border-b border-gray-300">
+                                <td className="py-3 px-4 border-r text-sm">{index + 1}</td>
                                 <td className="py-3 px-4 border-r text-sm">{customer.name}</td>
                                 <td className="py-3 px-4 border-r text-sm">{customer.contactNumber}</td>
                                 <td className="py-3 px-4 border-r text-sm">{customer.nation}</td>
@@ -228,24 +279,22 @@ const AllCustomers = () => {
                                 <td className="py-3 px-4 border-r text-sm">{calculateAmounts(customer).totalPayableAmount}</td>
                                 <td className="py-3 px-4 border-r text-sm">{clearStatus(customer)}</td>
                                 <td className="py-3 px-4 text-sm">
-                                <div className="flex space-x-2 justify-center">
-    <button
-        onClick={() => handleViewDetails(customer)}
-        className="bg-blue-500 text-white text-xs p-1 rounded-lg hover:bg-blue-600"
-        aria-label={`View details of ${customer.name}`}
-    >
-        View Details
-    </button>
-    <button
-        onClick={() => handleAddInstallment(customer)}
-        className="bg-green-500 text-white text-xs p-1 rounded-lg hover:bg-green-600"
-        aria-label={`Add installment for ${customer.name}`}
-    >
-        Add Installment
-    </button>
-</div>
-
-
+                                    <div className="flex space-x-2 justify-center">
+                                        <button
+                                            onClick={() => handleViewDetails(customer)}
+                                            className="bg-blue-500 text-white text-xs p-1 rounded-lg hover:bg-blue-600"
+                                            aria-label={`View details of ${customer.name}`}
+                                        >
+                                            View Details
+                                        </button>
+                                        <button
+                                            onClick={() => handleAddInstallment(customer)}
+                                            className="bg-green-500 text-white text-xs p-1 rounded-lg hover:bg-green-600"
+                                            aria-label={`Add installment for ${customer.name}`}
+                                        >
+                                            Add Installment
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
@@ -253,9 +302,13 @@ const AllCustomers = () => {
                 </table>
             </div>
 
+            <div className="mt-4 text-lg font-semibold">
+                <p><strong>Total Payable Amount of Customers:</strong> {totalPayableAmount}</p>
+            </div>
+
             {/* Customer Details Modal */}
       {/* Customer Details Modal */}
-{!showAddInstallment && selectedCustomer && (
+  {!showAddInstallment && selectedCustomer && (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-gray-800 bg-opacity-70">
         <div className="bg-white p-6 rounded-lg shadow-lg relative max-w-4xl w-11/12 h-5/6 overflow-auto modal-print">
             <button
@@ -265,7 +318,7 @@ const AllCustomers = () => {
             >
                 &times;
             </button>
-            <h2 className="text-xl font-bold mb-4 text-center">FAHAD MOTORS (SITHARI  TOWN JATOI)</h2>
+            <h2 className="text-xl font-bold mb-4 text-center">FAHAD MOTORS (SITHARI TOWN JATOI)</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div className="text-sm">
                     <p><strong>Sale Date:</strong> {formatDate(selectedCustomer.saleDate)}</p>
@@ -361,8 +414,6 @@ const AllCustomers = () => {
         </div>
     </div>
 )}
-
-
 
             {/* Add Installment Modal */}
             {showAddInstallment && selectedCustomer && (
